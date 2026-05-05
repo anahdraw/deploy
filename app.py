@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
 
 # =============================================
 # KONFIGURASI HALAMAN
@@ -13,18 +14,53 @@ st.set_page_config(
 )
 
 # =============================================
-# LOAD MODEL
+# TRAIN MODEL LANGSUNG DARI CSV (menghindari masalah versi pickle)
 # =============================================
 @st.cache_resource
-def load_model():
-    with open("models/model_realisasi_anggaran.pkl", "rb") as f:
-        artifacts = pickle.load(f)
-    return artifacts
+def train_model():
+    df = pd.read_csv("data/realisasi_anggaran.csv")
 
-artifacts = load_model()
+    le_kementerian = LabelEncoder()
+    le_provinsi = LabelEncoder()
+    le_tipe = LabelEncoder()
+    le_jenis = LabelEncoder()
+
+    df["kementerian_enc"] = le_kementerian.fit_transform(df["nama_kementerian"])
+    df["provinsi_enc"] = le_provinsi.fit_transform(df["provinsi"])
+    df["tipe_enc"] = le_tipe.fit_transform(df["tipe_satker"])
+    df["jenis_enc"] = le_jenis.fit_transform(df["jenis_belanja_utama"])
+
+    feature_cols = [
+        "pagu_miliar", "jumlah_pegawai", "jumlah_spm", "revisi_dipa",
+        "realisasi_tw1_persen", "realisasi_tw2_persen", "realisasi_tw3_persen",
+        "deviasi_rpd_persen", "skor_ikpa",
+        "kementerian_enc", "provinsi_enc", "tipe_enc", "jenis_enc",
+    ]
+
+    X = df[feature_cols]
+    y = (df["realisasi_tercapai_95persen"] == "Ya").astype(int)
+
+    model = RandomForestClassifier(
+        n_estimators=100, max_depth=10, random_state=42, class_weight="balanced"
+    )
+    model.fit(X, y)
+
+    return {
+        "model": model,
+        "feature_cols": feature_cols,
+        "le_kementerian": le_kementerian,
+        "le_provinsi": le_provinsi,
+        "le_tipe": le_tipe,
+        "le_jenis": le_jenis,
+        "kementerian_classes": list(le_kementerian.classes_),
+        "provinsi_classes": list(le_provinsi.classes_),
+        "tipe_classes": list(le_tipe.classes_),
+        "jenis_classes": list(le_jenis.classes_),
+    }
+
+artifacts = train_model()
 model = artifacts["model"]
 
-# Daftar pilihan dari encoder
 KEMENTERIAN = artifacts["kementerian_classes"]
 PROVINSI = artifacts["provinsi_classes"]
 TIPE_SATKER = artifacts["tipe_classes"]
@@ -46,7 +82,6 @@ st.markdown("---")
 st.sidebar.header("📝 Input Data Satker")
 st.sidebar.markdown("Masukkan data satker yang ingin diprediksi:")
 
-# Kategorikal
 nama_kementerian = st.sidebar.selectbox("Kementerian/Lembaga", KEMENTERIAN)
 provinsi = st.sidebar.selectbox("Provinsi", PROVINSI)
 tipe_satker = st.sidebar.selectbox("Tipe Satker", TIPE_SATKER)
@@ -55,7 +90,6 @@ jenis_belanja = st.sidebar.selectbox("Jenis Belanja Utama", JENIS_BELANJA)
 st.sidebar.markdown("---")
 st.sidebar.subheader("💰 Data Anggaran")
 
-# Numerik
 pagu_miliar = st.sidebar.number_input(
     "Pagu Anggaran (Miliar Rp)", min_value=0.1, max_value=1000.0, value=50.0, step=5.0
 )
@@ -79,9 +113,7 @@ realisasi_tw3 = st.sidebar.slider("Realisasi TW-3 (%)", 0.0, 95.0, 70.0, 0.5)
 st.sidebar.markdown("---")
 st.sidebar.subheader("🎯 Indikator Kinerja")
 
-deviasi_rpd = st.sidebar.slider(
-    "Deviasi RPD Hal. III DIPA (%)", 0.0, 50.0, 10.0, 0.5
-)
+deviasi_rpd = st.sidebar.slider("Deviasi RPD Hal. III DIPA (%)", 0.0, 50.0, 10.0, 0.5)
 skor_ikpa = st.sidebar.slider("Skor IKPA", 50.0, 100.0, 85.0, 0.5)
 
 # =============================================
@@ -102,10 +134,10 @@ input_data = pd.DataFrame([{
     "realisasi_tw3_persen": realisasi_tw3,
     "deviasi_rpd_persen": deviasi_rpd,
     "skor_ikpa": skor_ikpa,
-    "kementerian_encoded": le_kementerian.transform([nama_kementerian])[0],
-    "provinsi_encoded": le_provinsi.transform([provinsi])[0],
-    "tipe_encoded": le_tipe.transform([tipe_satker])[0],
-    "jenis_encoded": le_jenis.transform([jenis_belanja])[0],
+    "kementerian_enc": le_kementerian.transform([nama_kementerian])[0],
+    "provinsi_enc": le_provinsi.transform([provinsi])[0],
+    "tipe_enc": le_tipe.transform([tipe_satker])[0],
+    "jenis_enc": le_jenis.transform([jenis_belanja])[0],
 }])
 
 # =============================================
@@ -128,17 +160,20 @@ with col_left:
 
     st.markdown("")
     info_data = {
-        "Parameter": ["Kementerian", "Provinsi", "Tipe Satker", "Jenis Belanja",
-                       "Jumlah SPM", "Revisi DIPA", "Deviasi RPD"],
-        "Nilai": [nama_kementerian, provinsi, tipe_satker, jenis_belanja,
-                  jumlah_spm, revisi_dipa, f"{deviasi_rpd:.1f}%"],
+        "Parameter": [
+            "Kementerian", "Provinsi", "Tipe Satker", "Jenis Belanja",
+            "Jumlah SPM", "Revisi DIPA", "Deviasi RPD",
+        ],
+        "Nilai": [
+            nama_kementerian, provinsi, tipe_satker, jenis_belanja,
+            jumlah_spm, revisi_dipa, f"{deviasi_rpd:.1f}%",
+        ],
     }
     st.dataframe(pd.DataFrame(info_data), use_container_width=True, hide_index=True)
 
 with col_right:
     st.subheader("🔮 Hasil Prediksi")
 
-    # Prediksi
     prediction = model.predict(input_data)[0]
     probability = model.predict_proba(input_data)[0]
 
@@ -146,9 +181,9 @@ with col_right:
     prob_tidak = probability[0] * 100
 
     if prediction == 1:
-        st.success(f"### ✅ Realisasi Diprediksi TERCAPAI ≥ 95%")
+        st.success("### ✅ Realisasi Diprediksi TERCAPAI ≥ 95%")
     else:
-        st.error(f"### ❌ Realisasi Diprediksi TIDAK Tercapai")
+        st.error("### ❌ Realisasi Diprediksi TIDAK Tercapai")
 
     st.markdown("")
 
@@ -156,11 +191,9 @@ with col_right:
     col_p1.metric("Probabilitas Tercapai", f"{prob_tercapai:.1f}%")
     col_p2.metric("Probabilitas Tidak", f"{prob_tidak:.1f}%")
 
-    # Progress bar visual
     st.markdown("**Confidence Level:**")
     st.progress(prob_tercapai / 100)
 
-    # Rekomendasi
     st.markdown("---")
     st.subheader("💡 Rekomendasi")
 
@@ -198,10 +231,10 @@ feature_names_display = {
     "realisasi_tw3_persen": "Realisasi TW-3",
     "deviasi_rpd_persen": "Deviasi RPD",
     "skor_ikpa": "Skor IKPA",
-    "kementerian_encoded": "Kementerian",
-    "provinsi_encoded": "Provinsi",
-    "tipe_encoded": "Tipe Satker",
-    "jenis_encoded": "Jenis Belanja",
+    "kementerian_enc": "Kementerian",
+    "provinsi_enc": "Provinsi",
+    "tipe_enc": "Tipe Satker",
+    "jenis_enc": "Jenis Belanja",
 }
 
 importances = pd.DataFrame({
