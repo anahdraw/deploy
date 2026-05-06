@@ -111,18 +111,10 @@ longitude = st.sidebar.number_input(
 )
 
 # =============================================
-# PREDIKSI
+# TOMBOL PREDIKSI
 # =============================================
-input_array = np.array([[
-    transaction_date,
-    house_age,
-    distance_to_mrt,
-    num_convenience,
-    latitude,
-    longitude,
-]])
-
-prediction = skl_model.predict(input_array)[0]
+st.sidebar.markdown("---")
+predict_btn = st.sidebar.button("🚀 Jalankan Prediksi", use_container_width=True, type="primary")
 
 # =============================================
 # TAMPILAN UTAMA
@@ -154,47 +146,59 @@ with col_left:
 with col_right:
     st.subheader("🔮 Hasil Prediksi")
 
-    st.success(f"### 💰 Harga: {prediction:,.2f}")
-    st.metric("Harga Prediksi per Unit Area", f"{prediction:,.2f}")
-    st.caption("Satuan: sesuai dataset training di Orange")
+    if predict_btn:
+        input_array = np.array([[
+            transaction_date,
+            house_age,
+            distance_to_mrt,
+            num_convenience,
+            latitude,
+            longitude,
+        ]])
 
-    # Feature importance
-    st.markdown("---")
-    st.subheader("📊 Feature Importance")
+        prediction = skl_model.predict(input_array)[0]
 
-    feat_names = [
-        "Tahun Transaksi", "Usia Bangunan", "Jarak ke MRT",
-        "Convenience Store", "Latitude", "Longitude",
-    ]
-    importances = pd.DataFrame({
-        "Faktor": feat_names,
-        "Importance": skl_model.feature_importances_,
-    }).sort_values("Importance", ascending=True)
-    st.bar_chart(importances.set_index("Faktor"))
+        st.success(f"### 💰 Harga: {prediction:,.2f}")
+        st.metric("Harga Prediksi per Unit Area", f"{prediction:,.2f}")
+        st.caption("Satuan: sesuai dataset training di Orange")
+
+        # Insight
+        st.markdown("---")
+        st.subheader("💡 Insight")
+        insights = []
+        if house_age > 30:
+            insights.append("🏚️ Bangunan cukup tua (>30 tahun), biasanya berkorelasi negatif dengan harga.")
+        if distance_to_mrt > 1500:
+            insights.append("🚇 Jarak ke MRT jauh (>1.5 km). Properti dekat transportasi umum cenderung lebih mahal.")
+        if distance_to_mrt < 300:
+            insights.append("🚇 Sangat dekat MRT (<300 m) — lokasi premium!")
+        if num_convenience >= 7:
+            insights.append("🏪 Banyak fasilitas di sekitar — ini biasanya mendongkrak harga.")
+        if num_convenience <= 2:
+            insights.append("🏪 Fasilitas sekitar minim, bisa menekan harga.")
+        if not insights:
+            st.info("✅ Properti dengan karakteristik standar.")
+        else:
+            for i in insights:
+                st.info(i)
+    else:
+        st.info("👈 Isi data properti di sidebar, lalu klik **Jalankan Prediksi**.")
 
 # =============================================
-# INSIGHT
+# FEATURE IMPORTANCE (selalu tampil)
 # =============================================
 st.markdown("---")
-st.subheader("💡 Insight")
+st.subheader("📊 Feature Importance")
 
-insights = []
-if house_age > 30:
-    insights.append("🏚️ Bangunan cukup tua (>30 tahun), biasanya berkorelasi negatif dengan harga.")
-if distance_to_mrt > 1500:
-    insights.append("🚇 Jarak ke MRT jauh (>1.5 km). Properti dekat transportasi umum cenderung lebih mahal.")
-if distance_to_mrt < 300:
-    insights.append("🚇 Sangat dekat MRT (<300 m) — lokasi premium!")
-if num_convenience >= 7:
-    insights.append("🏪 Banyak fasilitas di sekitar — ini biasanya mendongkrak harga.")
-if num_convenience <= 2:
-    insights.append("🏪 Fasilitas sekitar minim, bisa menekan harga.")
-
-if not insights:
-    st.info("✅ Properti dengan karakteristik standar.")
-else:
-    for i in insights:
-        st.info(i)
+feat_names = [
+    "Tahun Transaksi", "Usia Bangunan", "Jarak ke MRT",
+    "Convenience Store", "Latitude", "Longitude",
+]
+importances = pd.DataFrame({
+    "Faktor": feat_names,
+    "Importance": skl_model.feature_importances_,
+}).sort_values("Importance", ascending=True)
+st.bar_chart(importances.set_index("Faktor"))
 
 # =============================================
 # FOOTER
