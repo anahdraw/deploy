@@ -13,18 +13,53 @@ st.set_page_config(
 )
 
 # =============================================
-# LOAD MODEL DARI PICKLE ORANGE
+# CUSTOM UNPICKLER
+# Bypass Orange Qt dependencies, extract sklearn model langsung
+# =============================================
+class ContinuousDistribution(np.ndarray):
+    """Dummy untuk Orange.statistics.distribution.Continuous (subclass ndarray)"""
+    def __new__(cls, *args, **kwargs):
+        if args and isinstance(args[0], np.ndarray):
+            return args[0].view(cls)
+        return np.array([]).view(cls)
+    def __setstate__(self, state):
+        if isinstance(state, tuple):
+            try:
+                np.ndarray.__setstate__(self, state[:5] if len(state) > 5 else state)
+            except Exception:
+                pass
+            if len(state) > 5 and isinstance(state[5], dict):
+                self.__dict__.update(state[5])
+        elif isinstance(state, dict):
+            self.__dict__.update(state)
+
+class OrangeBypassUnpickler(pickle.Unpickler):
+    """Load pickle Orange tanpa install Orange3/Qt"""
+    SPECIAL = {
+        ("Orange.statistics.distribution", "Continuous"): ContinuousDistribution,
+    }
+    def find_class(self, module, name):
+        if (module, name) in self.SPECIAL:
+            return self.SPECIAL[(module, name)]
+        if module.startswith("Orange"):
+            return type(name, (), {
+                "__init__": lambda self, *a, **k: None,
+                "__setstate__": lambda self, state: (
+                    self.__dict__.update(state) if isinstance(state, dict) else None
+                ),
+            })
+        return super().find_class(module, name)
+
+# =============================================
+# LOAD MODEL
 # =============================================
 @st.cache_resource
 def load_model():
     with open("models/house_model.pkcls", "rb") as f:
-        orange_model = pickle.load(f)
-    return orange_model
+        orange_model = OrangeBypassUnpickler(f).load()
+    return orange_model.skl_model
 
-orange_model = load_model()
-
-# Ambil sklearn model dari dalam Orange wrapper
-skl_model = orange_model.skl_model
+skl_model = load_model()
 
 # =============================================
 # HEADER
@@ -76,7 +111,7 @@ longitude = st.sidebar.number_input(
 )
 
 # =============================================
-# PREDIKSI - langsung pakai sklearn model
+# PREDIKSI
 # =============================================
 input_array = np.array([[
     transaction_date,
@@ -119,15 +154,9 @@ with col_left:
 with col_right:
     st.subheader("🔮 Hasil Prediksi")
 
-    if prediction >= 50:
-        st.success(f"### 💰 Harga: {prediction:.1f}")
-    elif prediction >= 30:
-        st.warning(f"### 💰 Harga: {prediction:.1f}")
-    else:
-        st.error(f"### 💰 Harga: {prediction:.1f}")
-
-    st.metric("Harga Prediksi per Unit Area", f"{prediction:.1f}")
-    st.caption("Satuan: 10.000 New Taiwan Dollar / Ping")
+    st.success(f"### 💰 Harga: {prediction:,.2f}")
+    st.metric("Harga Prediksi per Unit Area", f"{prediction:,.2f}")
+    st.caption("Satuan: sesuai dataset training di Orange")
 
     # Feature importance
     st.markdown("---")
